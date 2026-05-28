@@ -90,7 +90,7 @@ namespace alekseev
 
     Sequence< std::string > names;
     const Project& project = projects_.get(name);
-    for (BSTree< std::string, Project >::const_iterator it = projects_.cbegin();
+    for (RBTree< std::string, Project >::const_iterator it = projects_.cbegin();
         it != projects_.cend(); ++it)
     {
       if (it->first != name && projectDependsOn(project, it->second))

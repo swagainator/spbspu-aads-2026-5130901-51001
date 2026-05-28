@@ -4,8 +4,8 @@
 #include <iosfwd>
 #include <string>
 
-#include <bstree.hpp>
 #include "project.hpp"
+#include "rb_tree.hpp"
 
 namespace alekseev
 {
@@ -25,7 +25,7 @@ namespace alekseev
     bool showProjectDependencies(const std::string& name, std::ostream& out) const;
 
   private:
-    BSTree< std::string, Project > projects_;
+    RBTree< std::string, Project > projects_;
 
     bool projectDependsOn(const Project& left, const Project& right) const;
   };
