@@ -228,9 +228,33 @@ namespace alekseev
   }
 
   template< class Key, class Value, class Compare >
-  void RBTree< Key, Value, Compare >::push(const Key&, const Value&)
+  void RBTree< Key, Value, Compare >::push(const Key& key, const Value& value)
   {
-    throw std::logic_error("rb tree insertion is not implemented");
+    Node* parent = nullptr;
+    Node** link = &root_;
+    while (*link != nullptr)
+    {
+      parent = *link;
+      if (cmp_(key, (*link)->data.first))
+      {
+        link = &(*link)->left;
+      }
+      else if (cmp_((*link)->data.first, key))
+      {
+        link = &(*link)->right;
+      }
+      else
+      {
+        (*link)->data.second = value;
+        return;
+      }
+    }
+
+    Node* node = new Node(key, value);
+    node->parent = parent;
+    *link = node;
+    ++size_;
+    fixAfterInsert(node);
   }
 
   template< class Key, class Value, class Compare >
@@ -318,7 +342,17 @@ namespace alekseev
   template< class Key, class Value, class Compare >
   bool RBTree< Key, Value, Compare >::checkInvariants() const noexcept
   {
-    return root_ == nullptr || root_->color == detail::RBColor::BLACK;
+    if (root_ == nullptr)
+    {
+      return true;
+    }
+    if (root_->color != detail::RBColor::BLACK)
+    {
+      return false;
+    }
+    std::size_t expectedBlackCount = 0;
+    return checkOrdered(root_, nullptr, nullptr, cmp_) &&
+        checkNode(root_, 0, expectedBlackCount);
   }
 
   template< class Key, class Value, class Compare >
@@ -461,6 +495,180 @@ namespace alekseev
     deleteSubtree(node->left);
     deleteSubtree(node->right);
     delete node;
+  }
+
+  template< class Key, class Value, class Compare >
+  bool RBTree< Key, Value, Compare >::isRed(const Node* node) noexcept
+  {
+    return node != nullptr && node->color == detail::RBColor::RED;
+  }
+
+  template< class Key, class Value, class Compare >
+  bool RBTree< Key, Value, Compare >::isBlack(const Node* node) noexcept
+  {
+    return !isRed(node);
+  }
+
+  template< class Key, class Value, class Compare >
+  bool RBTree< Key, Value, Compare >::checkNode(const Node* node,
+      std::size_t blackCount, std::size_t& expectedBlackCount) noexcept
+  {
+    if (node == nullptr)
+    {
+      ++blackCount;
+      if (expectedBlackCount == 0)
+      {
+        expectedBlackCount = blackCount;
+        return true;
+      }
+      return expectedBlackCount == blackCount;
+    }
+    if (node->color == detail::RBColor::BLACK)
+    {
+      ++blackCount;
+    }
+    if (isRed(node) && (isRed(node->left) || isRed(node->right)))
+    {
+      return false;
+    }
+    if (node->left != nullptr && node->left->parent != node)
+    {
+      return false;
+    }
+    if (node->right != nullptr && node->right->parent != node)
+    {
+      return false;
+    }
+    return checkNode(node->left, blackCount, expectedBlackCount) &&
+        checkNode(node->right, blackCount, expectedBlackCount);
+  }
+
+  template< class Key, class Value, class Compare >
+  bool RBTree< Key, Value, Compare >::checkOrdered(const Node* node, const Key* min,
+      const Key* max, Compare cmp) noexcept
+  {
+    if (node == nullptr)
+    {
+      return true;
+    }
+    if ((min != nullptr && !cmp(*min, node->data.first)) ||
+        (max != nullptr && !cmp(node->data.first, *max)))
+    {
+      return false;
+    }
+    return checkOrdered(node->left, min, std::addressof(node->data.first), cmp) &&
+        checkOrdered(node->right, std::addressof(node->data.first), max, cmp);
+  }
+
+  template< class Key, class Value, class Compare >
+  void RBTree< Key, Value, Compare >::rotateLeft(Node* node) noexcept
+  {
+    Node* right = node->right;
+    node->right = right->left;
+    if (right->left != nullptr)
+    {
+      right->left->parent = node;
+    }
+    right->parent = node->parent;
+    if (node->parent == nullptr)
+    {
+      root_ = right;
+    }
+    else if (node == node->parent->left)
+    {
+      node->parent->left = right;
+    }
+    else
+    {
+      node->parent->right = right;
+    }
+    right->left = node;
+    node->parent = right;
+  }
+
+  template< class Key, class Value, class Compare >
+  void RBTree< Key, Value, Compare >::rotateRight(Node* node) noexcept
+  {
+    Node* left = node->left;
+    node->left = left->right;
+    if (left->right != nullptr)
+    {
+      left->right->parent = node;
+    }
+    left->parent = node->parent;
+    if (node->parent == nullptr)
+    {
+      root_ = left;
+    }
+    else if (node == node->parent->right)
+    {
+      node->parent->right = left;
+    }
+    else
+    {
+      node->parent->left = left;
+    }
+    left->right = node;
+    node->parent = left;
+  }
+
+  template< class Key, class Value, class Compare >
+  void RBTree< Key, Value, Compare >::fixAfterInsert(Node* node) noexcept
+  {
+    while (isRed(node->parent))
+    {
+      Node* parent = node->parent;
+      Node* grandparent = parent->parent;
+      if (parent == grandparent->left)
+      {
+        Node* uncle = grandparent->right;
+        if (isRed(uncle))
+        {
+          parent->color = detail::RBColor::BLACK;
+          uncle->color = detail::RBColor::BLACK;
+          grandparent->color = detail::RBColor::RED;
+          node = grandparent;
+        }
+        else
+        {
+          if (node == parent->right)
+          {
+            node = parent;
+            rotateLeft(node);
+            parent = node->parent;
+            grandparent = parent->parent;
+          }
+          parent->color = detail::RBColor::BLACK;
+          grandparent->color = detail::RBColor::RED;
+          rotateRight(grandparent);
+        }
+      }
+      else
+      {
+        Node* uncle = grandparent->left;
+        if (isRed(uncle))
+        {
+          parent->color = detail::RBColor::BLACK;
+          uncle->color = detail::RBColor::BLACK;
+          grandparent->color = detail::RBColor::RED;
+          node = grandparent;
+        }
+        else
+        {
+          if (node == parent->left)
+          {
+            node = parent;
+            rotateRight(node);
+            parent = node->parent;
+            grandparent = parent->parent;
+          }
+          parent->color = detail::RBColor::BLACK;
+          grandparent->color = detail::RBColor::RED;
+          rotateLeft(grandparent);
+        }
+      }
+    }
+    root_->color = detail::RBColor::BLACK;
   }
 }
 

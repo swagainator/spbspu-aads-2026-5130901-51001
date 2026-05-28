@@ -142,6 +142,15 @@ namespace alekseev
     static const Node* next(const Node* node) noexcept;
     static std::size_t nodeHeight(const Node* node) noexcept;
     static void deleteSubtree(Node* node) noexcept;
+    static bool isRed(const Node* node) noexcept;
+    static bool isBlack(const Node* node) noexcept;
+    static bool checkNode(const Node* node, std::size_t blackCount,
+        std::size_t& expectedBlackCount) noexcept;
+    static bool checkOrdered(const Node* node, const Key* min, const Key* max,
+        Compare cmp) noexcept;
+    void rotateLeft(Node* node) noexcept;
+    void rotateRight(Node* node) noexcept;
+    void fixAfterInsert(Node* node) noexcept;
   };
 }
 
