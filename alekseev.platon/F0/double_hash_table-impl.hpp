@@ -21,7 +21,7 @@ namespace alekseev
     slots_(nullptr),
     size_(0),
     tombstones_(0),
-    capacity_(slots == 0 ? detail::MinDoubleHashSlots : slots),
+    capacity_(normalizeCapacity(slots)),
     hash_(hash),
     equal_(equal)
   {
@@ -103,45 +103,68 @@ namespace alekseev
   }
 
   template< class Key, class Value, class Hash, class Equal >
-  void DoubleHashTable< Key, Value, Hash, Equal >::add(const Key&, const Value&)
+  void DoubleHashTable< Key, Value, Hash, Equal >::add(const Key& key, const Value& value)
   {
-    throw std::logic_error("double hash insertion is not implemented");
+    insertNew(key, value);
   }
 
   template< class Key, class Value, class Hash, class Equal >
-  void DoubleHashTable< Key, Value, Hash, Equal >::add(Key&&, Value&&)
+  void DoubleHashTable< Key, Value, Hash, Equal >::add(Key&& key, Value&& value)
   {
-    throw std::logic_error("double hash insertion is not implemented");
+    insertNew(std::move(key), std::move(value));
   }
 
   template< class Key, class Value, class Hash, class Equal >
-  bool DoubleHashTable< Key, Value, Hash, Equal >::has(const Key&) const
+  bool DoubleHashTable< Key, Value, Hash, Equal >::has(const Key& key) const
   {
-    return false;
+    return findSlot(key) != nullptr;
   }
 
   template< class Key, class Value, class Hash, class Equal >
-  Value& DoubleHashTable< Key, Value, Hash, Equal >::at(const Key&)
+  Value& DoubleHashTable< Key, Value, Hash, Equal >::at(const Key& key)
   {
-    throw std::out_of_range("double hash key");
+    Slot* slot = findSlot(key);
+    if (slot == nullptr)
+    {
+      throw std::out_of_range("double hash key");
+    }
+    return slot->value;
   }
 
   template< class Key, class Value, class Hash, class Equal >
-  const Value& DoubleHashTable< Key, Value, Hash, Equal >::at(const Key&) const
+  const Value& DoubleHashTable< Key, Value, Hash, Equal >::at(const Key& key) const
   {
-    throw std::out_of_range("double hash key");
+    const Slot* slot = findSlot(key);
+    if (slot == nullptr)
+    {
+      throw std::out_of_range("double hash key");
+    }
+    return slot->value;
   }
 
   template< class Key, class Value, class Hash, class Equal >
-  Value DoubleHashTable< Key, Value, Hash, Equal >::drop(const Key&)
+  Value DoubleHashTable< Key, Value, Hash, Equal >::drop(const Key& key)
   {
-    throw std::out_of_range("double hash key");
+    Slot* slot = findSlot(key);
+    if (slot == nullptr)
+    {
+      throw std::out_of_range("double hash key");
+    }
+    Value value(std::move(slot->value));
+    slot->state = DoubleHashSlotState::DELETED;
+    --size_;
+    ++tombstones_;
+    return value;
   }
 
   template< class Key, class Value, class Hash, class Equal >
   void DoubleHashTable< Key, Value, Hash, Equal >::rehash(std::size_t slots)
   {
     DoubleHashTable next(slots, hash_, equal_);
+    for (const_iterator it = cbegin(); it != cend(); ++it)
+    {
+      next.add(it->key(), it->value());
+    }
     swap(next);
   }
 
@@ -390,6 +413,158 @@ namespace alekseev
     swap(capacity_, other.capacity_);
     swap(hash_, other.hash_);
     swap(equal_, other.equal_);
+  }
+
+  template< class Key, class Value, class Hash, class Equal >
+  template< class K, class V >
+  void DoubleHashTable< Key, Value, Hash, Equal >::insertNew(K&& key, V&& value)
+  {
+    if (capacity_ == 0)
+    {
+      throw std::overflow_error("double hash capacity");
+    }
+
+    Slot* firstDeleted = nullptr;
+    for (std::size_t i = 0; i < capacity_; ++i)
+    {
+      Slot& slot = slots_[probeIndex(key, i)];
+      if (slot.state == DoubleHashSlotState::OCCUPIED)
+      {
+        if (equal_(slot.key, key))
+        {
+          throw std::logic_error("duplicate double hash key");
+        }
+      }
+      else if (slot.state == DoubleHashSlotState::DELETED)
+      {
+        if (firstDeleted == nullptr)
+        {
+          firstDeleted = &slot;
+        }
+      }
+      else
+      {
+        Slot& target = firstDeleted == nullptr ? slot : *firstDeleted;
+        target.key = std::forward< K >(key);
+        target.value = std::forward< V >(value);
+        if (target.state == DoubleHashSlotState::DELETED)
+        {
+          --tombstones_;
+        }
+        target.state = DoubleHashSlotState::OCCUPIED;
+        ++size_;
+        return;
+      }
+    }
+
+    if (firstDeleted != nullptr)
+    {
+      firstDeleted->key = std::forward< K >(key);
+      firstDeleted->value = std::forward< V >(value);
+      firstDeleted->state = DoubleHashSlotState::OCCUPIED;
+      --tombstones_;
+      ++size_;
+      return;
+    }
+    throw std::overflow_error("double hash table full");
+  }
+
+  template< class Key, class Value, class Hash, class Equal >
+  typename DoubleHashTable< Key, Value, Hash, Equal >::Slot*
+      DoubleHashTable< Key, Value, Hash, Equal >::findSlot(const Key& key)
+  {
+    return const_cast< Slot* >(
+        static_cast< const DoubleHashTable& >(*this).findSlot(key));
+  }
+
+  template< class Key, class Value, class Hash, class Equal >
+  const typename DoubleHashTable< Key, Value, Hash, Equal >::Slot*
+      DoubleHashTable< Key, Value, Hash, Equal >::findSlot(const Key& key) const
+  {
+    if (capacity_ == 0)
+    {
+      return nullptr;
+    }
+
+    for (std::size_t i = 0; i < capacity_; ++i)
+    {
+      const Slot& slot = slots_[probeIndex(key, i)];
+      if (slot.state == DoubleHashSlotState::EMPTY)
+      {
+        return nullptr;
+      }
+      if (slot.state == DoubleHashSlotState::OCCUPIED && equal_(slot.key, key))
+      {
+        return &slot;
+      }
+    }
+    return nullptr;
+  }
+
+  template< class Key, class Value, class Hash, class Equal >
+  std::size_t DoubleHashTable< Key, Value, Hash, Equal >::probeIndex(const Key& key,
+      std::size_t probe) const noexcept
+  {
+    const std::size_t first = hash_(key) % capacity_;
+    return (first + probe * secondHash(key)) % capacity_;
+  }
+
+  template< class Key, class Value, class Hash, class Equal >
+  std::size_t DoubleHashTable< Key, Value, Hash, Equal >::secondHash(const Key& key)
+      const noexcept
+  {
+    if (capacity_ <= 2)
+    {
+      return 1;
+    }
+    return 1 + (hash_(key) / capacity_) % (capacity_ - 1);
+  }
+
+  template< class Key, class Value, class Hash, class Equal >
+  bool DoubleHashTable< Key, Value, Hash, Equal >::isPrime(std::size_t value) noexcept
+  {
+    if (value < 2)
+    {
+      return false;
+    }
+    if (value == 2)
+    {
+      return true;
+    }
+    if (value % 2 == 0)
+    {
+      return false;
+    }
+    for (std::size_t divisor = 3; divisor * divisor <= value; divisor += 2)
+    {
+      if (value % divisor == 0)
+      {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  template< class Key, class Value, class Hash, class Equal >
+  std::size_t DoubleHashTable< Key, Value, Hash, Equal >::nextPrime(std::size_t value)
+      noexcept
+  {
+    while (!isPrime(value))
+    {
+      ++value;
+    }
+    return value;
+  }
+
+  template< class Key, class Value, class Hash, class Equal >
+  std::size_t DoubleHashTable< Key, Value, Hash, Equal >::normalizeCapacity(
+      std::size_t slots) noexcept
+  {
+    if (slots < detail::MinDoubleHashSlots)
+    {
+      slots = detail::MinDoubleHashSlots;
+    }
+    return nextPrime(slots);
   }
 }
 

@@ -131,7 +131,16 @@ namespace alekseev
     Hash hash_;
     Equal equal_;
 
+    template< class K, class V >
+    void insertNew(K&& key, V&& value);
+    Slot* findSlot(const Key& key);
+    const Slot* findSlot(const Key& key) const;
+    std::size_t probeIndex(const Key& key, std::size_t probe) const noexcept;
+    std::size_t secondHash(const Key& key) const noexcept;
     void swap(DoubleHashTable& other) noexcept;
+    static bool isPrime(std::size_t value) noexcept;
+    static std::size_t nextPrime(std::size_t value) noexcept;
+    static std::size_t normalizeCapacity(std::size_t slots) noexcept;
   };
 }
 
