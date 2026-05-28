@@ -4,8 +4,8 @@
 #include <cstddef>
 #include <string>
 
-#include <hash_table.hpp>
 #include <sequence.hpp>
+#include "double_hash_table.hpp"
 #include "name_utils.hpp"
 
 namespace alekseev
@@ -46,7 +46,8 @@ namespace alekseev
     };
 
     using StringList = Sequence< std::string >;
-    using DependencyTable = HashTable< std::string, StringList, HmacHash, StringEqual >;
+    using DependencyTable =
+        DoubleHashTable< std::string, StringList, HmacHash, StringEqual >;
 
     StringList tasks_;
     DependencyTable requires_;
