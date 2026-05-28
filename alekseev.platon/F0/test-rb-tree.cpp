@@ -129,3 +129,86 @@ BOOST_AUTO_TEST_CASE(rb_tree_lookup_missing_key)
 
   BOOST_CHECK_THROW(tree.get(2), std::out_of_range);
 }
+
+BOOST_AUTO_TEST_CASE(rb_tree_drop_leaf_one_child_and_two_children)
+{
+  alekseev::RBTree< int, std::string > tree;
+  const int values[] = {10, 5, 15, 3, 7, 12, 18, 1, 6};
+  const std::size_t count = sizeof(values) / sizeof(values[0]);
+  for (std::size_t i = 0; i < count; ++i)
+  {
+    tree.push(values[i], std::to_string(values[i]));
+  }
+
+  BOOST_CHECK_EQUAL(tree.drop(1), "1");
+  BOOST_CHECK(!tree.contains(1));
+  BOOST_CHECK_EQUAL(joinKeys(tree), "3 5 6 7 10 12 15 18");
+  BOOST_CHECK(tree.checkInvariants());
+
+  BOOST_CHECK_EQUAL(tree.drop(7), "7");
+  BOOST_CHECK(!tree.contains(7));
+  BOOST_CHECK_EQUAL(joinKeys(tree), "3 5 6 10 12 15 18");
+  BOOST_CHECK(tree.checkInvariants());
+
+  BOOST_CHECK_EQUAL(tree.drop(5), "5");
+  BOOST_CHECK(!tree.contains(5));
+  BOOST_CHECK_EQUAL(joinKeys(tree), "3 6 10 12 15 18");
+  BOOST_CHECK(tree.checkInvariants());
+}
+
+BOOST_AUTO_TEST_CASE(rb_tree_drop_root_and_all_elements)
+{
+  alekseev::RBTree< int, std::string > tree;
+  fillAscending(tree, 25);
+
+  BOOST_CHECK_EQUAL(tree.drop(8), "8");
+  BOOST_CHECK(!tree.contains(8));
+  BOOST_CHECK(tree.checkInvariants());
+
+  for (int i = 0; i < 25; ++i)
+  {
+    if (i != 8)
+    {
+      BOOST_CHECK_EQUAL(tree.drop(i), std::to_string(i));
+      BOOST_CHECK(!tree.contains(i));
+      BOOST_CHECK(tree.checkInvariants());
+    }
+  }
+  BOOST_CHECK(tree.empty());
+  BOOST_CHECK_EQUAL(tree.size(), 0);
+  BOOST_CHECK(tree.begin() == tree.end());
+}
+
+BOOST_AUTO_TEST_CASE(rb_tree_drop_missing_key)
+{
+  alekseev::RBTree< int, std::string > tree;
+
+  BOOST_CHECK_THROW(tree.drop(1), std::out_of_range);
+  tree.push(1, "one");
+  BOOST_CHECK_THROW(tree.drop(2), std::out_of_range);
+  BOOST_CHECK_EQUAL(tree.size(), 1);
+  BOOST_CHECK(tree.checkInvariants());
+}
+
+BOOST_AUTO_TEST_CASE(rb_tree_copy_move_after_drop)
+{
+  alekseev::RBTree< int, std::string > tree;
+  fillAscending(tree, 10);
+  BOOST_CHECK_EQUAL(tree.drop(3), "3");
+  BOOST_CHECK_EQUAL(tree.drop(7), "7");
+
+  alekseev::RBTree< int, std::string > copy(tree);
+  BOOST_CHECK_EQUAL(joinKeys(copy), "0 1 2 4 5 6 8 9");
+  BOOST_CHECK(copy.checkInvariants());
+
+  alekseev::RBTree< int, std::string > assigned;
+  assigned = tree;
+  BOOST_CHECK_EQUAL(assigned.drop(4), "4");
+  BOOST_CHECK_EQUAL(joinKeys(tree), "0 1 2 4 5 6 8 9");
+  BOOST_CHECK(assigned.checkInvariants());
+
+  alekseev::RBTree< int, std::string > moved(std::move(assigned));
+  BOOST_CHECK(assigned.empty());
+  BOOST_CHECK_EQUAL(joinKeys(moved), "0 1 2 5 6 8 9");
+  BOOST_CHECK(moved.checkInvariants());
+}

@@ -286,9 +286,69 @@ namespace alekseev
   }
 
   template< class Key, class Value, class Compare >
-  Value RBTree< Key, Value, Compare >::drop(const Key&)
+  Value RBTree< Key, Value, Compare >::drop(const Key& key)
   {
-    throw std::logic_error("rb tree erase is not implemented");
+    Node* node = findNode(key);
+    if (node == nullptr)
+    {
+      throw std::out_of_range("rb tree key");
+    }
+
+    Value value = node->data.second;
+    Node* moved = node;
+    detail::RBColor originalColor = moved->color;
+    Node* child = nullptr;
+    Node* childParent = nullptr;
+
+    if (node->left == nullptr)
+    {
+      child = node->right;
+      childParent = node->parent;
+      transplant(node, node->right);
+    }
+    else if (node->right == nullptr)
+    {
+      child = node->left;
+      childParent = node->parent;
+      transplant(node, node->left);
+    }
+    else
+    {
+      moved = minimum(node->right);
+      originalColor = moved->color;
+      child = moved->right;
+      if (moved->parent == node)
+      {
+        childParent = moved;
+        if (child != nullptr)
+        {
+          child->parent = moved;
+        }
+      }
+      else
+      {
+        childParent = moved->parent;
+        transplant(moved, moved->right);
+        moved->right = node->right;
+        moved->right->parent = moved;
+      }
+      transplant(node, moved);
+      moved->left = node->left;
+      moved->left->parent = moved;
+      moved->color = node->color;
+    }
+
+    delete node;
+    --size_;
+    if (originalColor == detail::RBColor::BLACK)
+    {
+      fixAfterErase(child, childParent);
+    }
+    if (root_ != nullptr)
+    {
+      root_->color = detail::RBColor::BLACK;
+    }
+    return value;
   }
 
   template< class Key, class Value, class Compare >
@@ -510,6 +570,29 @@ namespace alekseev
   }
 
   template< class Key, class Value, class Compare >
+  typename RBTree< Key, Value, Compare >::Node*
+      RBTree< Key, Value, Compare >::leftOf(Node* node) noexcept
+  {
+    return node == nullptr ? nullptr : node->left;
+  }
+
+  template< class Key, class Value, class Compare >
+  typename RBTree< Key, Value, Compare >::Node*
+      RBTree< Key, Value, Compare >::rightOf(Node* node) noexcept
+  {
+    return node == nullptr ? nullptr : node->right;
+  }
+
+  template< class Key, class Value, class Compare >
+  void RBTree< Key, Value, Compare >::setColor(Node* node, detail::RBColor color) noexcept
+  {
+    if (node != nullptr)
+    {
+      node->color = color;
+    }
+  }
+
+  template< class Key, class Value, class Compare >
   bool RBTree< Key, Value, Compare >::checkNode(const Node* node,
       std::size_t blackCount, std::size_t& expectedBlackCount) noexcept
   {
@@ -613,6 +696,27 @@ namespace alekseev
   }
 
   template< class Key, class Value, class Compare >
+  void RBTree< Key, Value, Compare >::transplant(Node* node, Node* replacement) noexcept
+  {
+    if (node->parent == nullptr)
+    {
+      root_ = replacement;
+    }
+    else if (node == node->parent->left)
+    {
+      node->parent->left = replacement;
+    }
+    else
+    {
+      node->parent->right = replacement;
+    }
+    if (replacement != nullptr)
+    {
+      replacement->parent = node->parent;
+    }
+  }
+
+  template< class Key, class Value, class Compare >
   void RBTree< Key, Value, Compare >::fixAfterInsert(Node* node) noexcept
   {
     while (isRed(node->parent))
@@ -669,6 +773,85 @@ namespace alekseev
       }
     }
     root_->color = detail::RBColor::BLACK;
+  }
+
+  template< class Key, class Value, class Compare >
+  void RBTree< Key, Value, Compare >::fixAfterErase(Node* node, Node* parent) noexcept
+  {
+    while (node != root_ && isBlack(node))
+    {
+      if (parent == nullptr)
+      {
+        break;
+      }
+      if (node == parent->left)
+      {
+        Node* sibling = parent->right;
+        if (isRed(sibling))
+        {
+          sibling->color = detail::RBColor::BLACK;
+          parent->color = detail::RBColor::RED;
+          rotateLeft(parent);
+          sibling = parent->right;
+        }
+        if (isBlack(leftOf(sibling)) && isBlack(rightOf(sibling)))
+        {
+          setColor(sibling, detail::RBColor::RED);
+          node = parent;
+          parent = node->parent;
+        }
+        else
+        {
+          if (isBlack(rightOf(sibling)))
+          {
+            setColor(leftOf(sibling), detail::RBColor::BLACK);
+            setColor(sibling, detail::RBColor::RED);
+            rotateRight(sibling);
+            sibling = parent->right;
+          }
+          setColor(sibling, parent->color);
+          parent->color = detail::RBColor::BLACK;
+          setColor(rightOf(sibling), detail::RBColor::BLACK);
+          rotateLeft(parent);
+          node = root_;
+          parent = nullptr;
+        }
+      }
+      else
+      {
+        Node* sibling = parent->left;
+        if (isRed(sibling))
+        {
+          sibling->color = detail::RBColor::BLACK;
+          parent->color = detail::RBColor::RED;
+          rotateRight(parent);
+          sibling = parent->left;
+        }
+        if (isBlack(rightOf(sibling)) && isBlack(leftOf(sibling)))
+        {
+          setColor(sibling, detail::RBColor::RED);
+          node = parent;
+          parent = node->parent;
+        }
+        else
+        {
+          if (isBlack(leftOf(sibling)))
+          {
+            setColor(rightOf(sibling), detail::RBColor::BLACK);
+            setColor(sibling, detail::RBColor::RED);
+            rotateLeft(sibling);
+            sibling = parent->left;
+          }
+          setColor(sibling, parent->color);
+          parent->color = detail::RBColor::BLACK;
+          setColor(leftOf(sibling), detail::RBColor::BLACK);
+          rotateRight(parent);
+          node = root_;
+          parent = nullptr;
+        }
+      }
+    }
+    setColor(node, detail::RBColor::BLACK);
   }
 }
 
