@@ -1,5 +1,6 @@
 #include <boost/test/unit_test.hpp>
 
+#include <cstddef>
 #include <string>
 
 #include <sequence.hpp>
@@ -182,4 +183,82 @@ BOOST_AUTO_TEST_CASE(build_order_reports_cycle)
 
   alekseev::Sequence< std::string > order;
   BOOST_CHECK(!graph.buildOrder(order));
+}
+
+BOOST_AUTO_TEST_CASE(task_graph_many_tasks_chain_and_branching)
+{
+  alekseev::TaskGraph graph;
+  const std::size_t taskCount = 75;
+
+  for (std::size_t i = 0; i < taskCount; ++i)
+  {
+    BOOST_REQUIRE(graph.addTask("t" + std::to_string(i)));
+  }
+  for (std::size_t i = 1; i < taskCount; ++i)
+  {
+    BOOST_REQUIRE(graph.addDependency("t" + std::to_string(i), "t" + std::to_string(i - 1)));
+  }
+  BOOST_REQUIRE(graph.addTask("branchA"));
+  BOOST_REQUIRE(graph.addTask("branchB"));
+  BOOST_REQUIRE(graph.addTask("final"));
+  BOOST_REQUIRE(graph.addDependency("branchA", "t10"));
+  BOOST_REQUIRE(graph.addDependency("branchB", "t10"));
+  BOOST_REQUIRE(graph.addDependency("final", "branchA"));
+  BOOST_REQUIRE(graph.addDependency("final", "branchB"));
+
+  BOOST_CHECK_EQUAL(graph.taskCount(), taskCount + 3);
+  BOOST_CHECK_EQUAL(graph.dependsOnCount("final"), 2);
+  BOOST_CHECK_EQUAL(graph.requiredForCount("t10"), 3);
+  BOOST_CHECK(!graph.hasCycle());
+
+  alekseev::Sequence< std::string > order;
+  BOOST_CHECK(graph.buildOrder(order));
+  BOOST_CHECK_EQUAL(order.size(), taskCount + 3);
+  BOOST_CHECK_EQUAL(order[0], "t0");
+  BOOST_CHECK_EQUAL(order[10], "t10");
+}
+
+BOOST_AUTO_TEST_CASE(task_graph_remove_dependency_and_tombstone_regression)
+{
+  alekseev::TaskGraph graph;
+  BOOST_REQUIRE(graph.addTask("a"));
+  BOOST_REQUIRE(graph.addTask("b"));
+  BOOST_REQUIRE(graph.addTask("c"));
+  BOOST_REQUIRE(graph.addTask("d"));
+  BOOST_REQUIRE(graph.addDependency("b", "a"));
+  BOOST_REQUIRE(graph.addDependency("c", "a"));
+  BOOST_REQUIRE(graph.addDependency("d", "b"));
+  BOOST_REQUIRE(graph.addDependency("d", "c"));
+
+  BOOST_CHECK(graph.removeDependency("d", "b"));
+  BOOST_CHECK(!graph.hasDependency("d", "b"));
+  BOOST_CHECK_EQUAL(graph.dependsOnCount("d"), 1);
+  BOOST_CHECK_EQUAL(graph.requiredForCount("b"), 0);
+
+  BOOST_CHECK(graph.removeTask("a"));
+  BOOST_CHECK(!graph.hasTask("a"));
+  BOOST_CHECK_EQUAL(graph.dependsOnCount("b"), 0);
+  BOOST_CHECK_EQUAL(graph.dependsOnCount("c"), 0);
+  BOOST_CHECK_EQUAL(graph.dependencyCount(), 1);
+  BOOST_CHECK(graph.addTask("e"));
+  BOOST_CHECK(graph.addDependency("e", "d"));
+}
+
+BOOST_AUTO_TEST_CASE(task_graph_merge_preserves_unique_tasks_and_edges)
+{
+  alekseev::TaskGraph left;
+  BOOST_REQUIRE(left.addTask("compile"));
+  BOOST_REQUIRE(left.addTask("link"));
+  BOOST_REQUIRE(left.addDependency("link", "compile"));
+
+  alekseev::TaskGraph right;
+  BOOST_REQUIRE(right.addTask("compile"));
+  BOOST_REQUIRE(right.addTask("test"));
+  BOOST_REQUIRE(right.addDependency("test", "compile"));
+
+  BOOST_CHECK(left.mergeFrom(right));
+  BOOST_CHECK_EQUAL(left.taskCount(), 3);
+  BOOST_CHECK_EQUAL(left.dependencyCount(), 2);
+  BOOST_CHECK(left.hasDependency("link", "compile"));
+  BOOST_CHECK(left.hasDependency("test", "compile"));
 }
